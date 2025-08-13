@@ -21,11 +21,9 @@ void apInit(void)
 	MPU6050_Init();
 
 	MOTOR_Init();
-	MOTOR_CTRL_Init();
 	ENCODER_Update();
 
 	HAL_Delay(1000);
-	MOTOR_Angle_AbsDeg(-90.0f);
 }
 
 void apMain(void)
@@ -46,16 +44,15 @@ void apMain(void)
 
 			// 모터 제어
 			ENCODER_Update();       // 센서 갱신
-			MOTOR_Angle_Step();     // 속도 제어
 		}
 		if ((int32_t)(HAL_GetTick() - t100) >= 100)
 		{
 			t100 += 100;
 
-			int32_t count = ENCODER_GetCount();
-			float angle = ENCODER_GetAngleDeg();
+			float angle1 = ENCODER_GetAngleDeg_ID(MOTOR_LEFT);
+			float angle2 = ENCODER_GetAngleDeg_ID(MOTOR_RIGHT);
 
-			snprintf(msg, sizeof(msg), "Count: %ld, Angle: %.2f\r\n", (long)count, angle);
+			snprintf(msg, sizeof(msg), "Left: %.2f, Right: %.2f\r\n", angle1, angle2);
 			HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
 //			snprintf(msg, sizeof(msg), "Roll=%f Pitch=%f Yaw=%f\r\n", gyro[0], gyro[1], gyro[2]);
 //			HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
