@@ -6,21 +6,21 @@
  */
 
 #include "motor_encoder.h"
+#include "pid.h"
 
 #include "tim.h"
 #include <math.h>
-#include "pid_control.h"
 
 // ===== 하드웨어 핀/타이머 =====
-#define MOTOR_R1_PORT		GPIOA
-#define MOTOR_R2_PORT		GPIOC
+#define MOTOR_R1_PORT		GPIOC
+#define MOTOR_R2_PORT		GPIOA
 #define MOTOR_L1_PORT		GPIOB
 #define MOTOR_L2_PORT		GPIOB
 
-#define MOTOR_R1_PIN		GPIO_PIN_2
-#define MOTOR_R2_PIN		GPIO_PIN_3
-#define MOTOR_L1_PIN		GPIO_PIN_4
-#define MOTOR_L2_PIN		GPIO_PIN_5
+#define MOTOR_R1_PIN		GPIO_PIN_3
+#define MOTOR_R2_PIN		GPIO_PIN_2
+#define MOTOR_L1_PIN		GPIO_PIN_5
+#define MOTOR_L2_PIN		GPIO_PIN_4
 
 #define MOTOR_TIM			&htim8
 #define ENCODER_TIM_LEFT	&htim2
@@ -51,23 +51,11 @@ static int32_t        s_prevCnt [MOTOR_COUNT] = {0};
 
 // ===== 파라미터 =====
 static const float CPR = PPR * 4.0f * GEAR_RATIO;
-static const float Ts  = 0.01f;  	// 10ms
+static const float Ts  = 0.002f;  	// 2ms
 
-// ===== 제어 파라미터/상태 =====
-#define DUTY_MAX_SPEED   	1.0f   // PWM 듀티 상한 (절대값)
-#define DUTY_MAX_ANGLE  	0.8f   // PWM 듀티 상한 (절대값)
-#define STOP_RPM        	5.0f    // 정지로 보는 속도 임계
-#define ANGLE_TOL_DEG   	1.0f    // 각도 목표 허용오차(±3도)
-
-static pid_t s_pid_speed[MOTOR_COUNT];     // 속도 PI: rpm -> duty
-static pid_t s_pid_angle[MOTOR_COUNT];     // 각도 PD: deg -> duty
-static bool  s_angle_active[MOTOR_COUNT] = { false, false }; // 각도 이동 활성화 여부
-static float s_prev_err[MOTOR_COUNT]     = { 0.0f, 0.0f   };
-
-// 유틸리티
-// 각도 제어 시 오버슈트 현상 발생 -> 90° 도달 후 튕겨서 70°
-#define ANG_SOFT_DEG   10.0f   // 목표 ±10° 안에서는 듀티를 선형으로 줄이기
-#define ANG_LOCK_DEG    2.0f   // 목표 교차 시 ±2° 안이면 즉시 정지
+// ===== 속도 PID 상태 =====
+static pid_t pid_speed[MOTOR_COUNT];   // 모터별 속도 PID
+static float target_rpm[MOTOR_COUNT] = {0.0f, 0.0f};  // 목표 RPM
 
 static inline float clampf(float x, float lo, float hi){
     return (x < lo) ? lo : (x > hi) ? hi : x;
@@ -131,7 +119,6 @@ float ENCODER_GetDistanceM_ID(motor_id_t id){ return s_distM[id]; }		// [m]
 
 // 필요 시 원점복귀
 void ENCODER_ResetPose_ID(motor_id_t id) { s_thetaRad[id] = 0.0f; s_distM[id] = 0.0f; }
-
 void ENCODER_ResetPose_All(void)
 {
 	for (int i=0;i<MOTOR_COUNT;i++)
@@ -164,4 +151,43 @@ void ENCODER_Update(void)
 		// 선형 거리: 바퀴 접지 기준 누적 거리 [m]
 		s_distM[id]    += WHEEL_RADIUS_M * dTheta;  // s += R * dθ
 	}
+}
+
+void MOTOR_SpeedPID_Init(float kp, float ki, float kd, float isum_limit, float output_limit)
+{
+    for (int id = 0; id < MOTOR_COUNT; id++)
+    {
+        PID_Init(&pid_speed[id], kp, ki, kd, isum_limit, output_limit); // out_limit은 듀티 상한(예: 1.0f)
+        pid_speed[id].setpoint = 0.0f;
+    }
+}
+
+void MOTOR_Speed_SetTargetRPM_ID(motor_id_t id, float rpm)
+{
+    if (id < 0 || id >= MOTOR_COUNT) return;
+    target_rpm[id] = rpm;
+    pid_speed[id].setpoint = rpm;   // pid.h의 setpoint 필드 사용
+}
+
+// 5ms마다 호출 (ENCODER_Update와 같은 주기)
+void MOTOR_Speed_Update(void)
+{
+    for (int id = 0; id < MOTOR_COUNT; id++)
+    {
+        // 피드백: 현재 RPM
+        float rpm_meas = ENCODER_GetRPM_ID(id);  // 이미 구현됨
+        // PID 계산: 출력은 듀티 명령(-output_limit ~ +output_limit)
+        float u = PID_Compute(&pid_speed[id], rpm_meas);
+        u = -u;
+
+//        extern UART_HandleTypeDef huart1;
+//        char dbg[64];
+//        int n = snprintf(dbg, sizeof(dbg), "u[%d]=%.2f, rpm=%.1f\r\n", id, u, rpm_meas);
+//        HAL_UART_Transmit(&huart1, (uint8_t*)dbg, n, 20);
+
+        // 듀티 적용: MOTOR_SetDuty_ID는 -1.0~+1.0 입력 (부호=방향, 크기=듀티)
+        // PID_Init의 output_limit을 1.0으로 주면 그대로 넣으면 됨.
+        u = clampf(u, -1.0f, +1.0f);
+        MOTOR_SetDuty_ID(id, u);
+    }
 }

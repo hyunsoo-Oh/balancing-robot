@@ -188,7 +188,7 @@ void MPU6050_Calibrate(void)
 		case 0x00:
 			accel_offset[0] = -453;
 			accel_offset[1] = 226;
-			accel_offset[2] = -1406;
+			accel_offset[2] = -106;
 			break;
 		case 0x08:
 			accel_offset[0] = -226;
@@ -210,8 +210,8 @@ void MPU6050_Calibrate(void)
 	{
 		case 0x00:
 			gyro_offset[0] = -443;
-			gyro_offset[1] = 204;
-			gyro_offset[2] = -58;
+			gyro_offset[1] = 154;
+			gyro_offset[2] = 28;
 			break;
 		case 0x08:
 			gyro_offset[0] = -221;

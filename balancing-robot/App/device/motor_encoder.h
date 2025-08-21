@@ -35,4 +35,8 @@ void  ENCODER_ResetPose_All(void);
 
 void ENCODER_Update(void);
 
+void  MOTOR_SpeedPID_Init(float kp, float ki, float kd, float isum_limit, float output_limit);
+void  MOTOR_Speed_SetTargetRPM_ID(motor_id_t id, float rpm);
+void  MOTOR_Speed_Update(void);  // 5ms 주기에서 호출
+
 #endif /* DEVICE_MOTOR_ENCODER_H_ */

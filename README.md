@@ -75,3 +75,13 @@ GPIO Mode: Output Push Pull
 GPIO Pull-up/Pull-down: No pull-up and no pull-down
 Maximum output speed: High
 ```
+
+## 밸런싱 로봇 알고리즘
+
+```
+double input, output;
+double setpoint = 180;
+double Kp = 25.0, Ki = Ki = 80.0, Kd = 1.2;
+PID pid(&input, &output, &setpoint, Kp, Ki, Kd, DIRECT);
+double fallLimit = 15;
+
