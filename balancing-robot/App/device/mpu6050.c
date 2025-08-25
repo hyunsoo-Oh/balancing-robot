@@ -28,11 +28,13 @@
 #define UART_BUS	&huart1
 
 static MPU6050_Config_t cfg = {
-	.dlpf_cfg 		= 0x03,
-	.gyro_fs_sel 	= 0x00,
+	.dlpf_cfg 		= 0x01,
+	.gyro_fs_sel 	= 0x08,
 	.accel_fs_sel 	= 0x00,
-	.smplrt_div 	= 0x04,
+	.smplrt_div 	= 0x01,
 };
+
+static uint8_t buf[14];
 
 static int16_t accel_offset[3] 	= {0, 0, 0};  // X, Y, Z 가속도 오프셋
 static int16_t gyro_offset[3] 	= {0, 0, 0};  // X, Y, Z 자이로 오프셋
@@ -55,6 +57,10 @@ static HAL_StatusTypeDef MPU6050_Write(uint8_t reg, uint8_t data)
 static HAL_StatusTypeDef MPU6050_Read(uint8_t reg, uint8_t *data, uint8_t length)
 {
 	return I2C_Read(MPU6050_ADDRESS, reg, data, length);
+}
+HAL_StatusTypeDef MPU6050_Read_DMA(uint8_t reg, uint8_t *data, uint8_t length)
+{
+	HAL_I2C_Mem_Read_DMA(I2C_BUS, MPU6050_ADDRESS << 1, MPU6050_ACCEL_XOUT_H, I2C_MEMADD_SIZE_8BIT, buf, 14);
 }
 
 void MPU6050_Init(void)
@@ -107,6 +113,19 @@ void MPU6050_READ_RawTemp(int16_t *te_data)
     *te_data = (int16_t)(buf[0] << 8 | buf[1]);
 }
 
+void MPU6050_READ_RawData_DMA(int16_t data[6])
+{
+	MPU6050_Read_DMA(MPU6050_ACCEL_XOUT_H, buf, 14);
+
+	data[0] = (int16_t)(buf[0] << 8 | buf[1]);
+	data[1] = (int16_t)(buf[2] << 8 | buf[3]);
+	data[2] = (int16_t)(buf[4] << 8 | buf[5]);
+
+	data[3] = (int16_t)(buf[8]  << 8 | buf[9]);
+	data[4] = (int16_t)(buf[10] << 8 | buf[11]);
+	data[5] = (int16_t)(buf[12] << 8 | buf[13]);
+}
+
 // 오프셋이 보정된 가속도 데이터 읽기
 void MPU6050_ReadAccel(int16_t ac_data[3])
 {
@@ -127,6 +146,20 @@ void MPU6050_ReadGyro(int16_t gy_data[3])
     gy_data[0] -= gyro_offset[0];
     gy_data[1] -= gyro_offset[1];
     gy_data[2] -= gyro_offset[2];
+}
+
+void MPU6050_ReadData_DMA(int16_t data[6])
+{
+	MPU6050_READ_RawData_DMA(data);
+
+    // 오프셋 보정
+	data[0] -= accel_offset[0];
+	data[1] -= accel_offset[1];
+	data[2] -= accel_offset[2];
+
+	data[3] -= gyro_offset[0];
+	data[4] -= gyro_offset[1];
+	data[5] -= gyro_offset[2];
 }
 
 // 실제 물리 단위로 변환하는 함수
@@ -181,6 +214,40 @@ float MPU6050_GetTempCelsius(void)
     return (float)raw_temp / 340.0f + 36.53f;
 }
 
+void MPU6050_GetAccGyrData_DMA(float accel_g[3], float gyro_dps[3])
+{
+    int16_t raw_data[6];
+    float lsb_per_g, lsb_per_dps;
+
+	MPU6050_ReadData_DMA(raw_data);
+
+    // 현재 설정에 따른 LSB/g 값 계산
+    switch (cfg.accel_fs_sel) {
+        case 0x00: lsb_per_g = 16384.0f; break; // ±2g
+        case 0x08: lsb_per_g = 8192.0f;  break; // ±4g
+        case 0x10: lsb_per_g = 4096.0f;  break; // ±8g
+        case 0x18: lsb_per_g = 2048.0f;  break; // ±16g
+        default:   lsb_per_g = 4096.0f;  break;
+    }
+
+    accel_g[0] = (float)raw_data[0] / lsb_per_g;
+    accel_g[1] = (float)raw_data[1] / lsb_per_g;
+    accel_g[2] = (float)raw_data[2] / lsb_per_g;
+
+    // 현재 설정에 따른 LSB/°/s 값 계산
+    switch (cfg.gyro_fs_sel) {
+        case 0x00: lsb_per_dps = 131.0f;  break; // ±250°/s
+        case 0x08: lsb_per_dps = 65.5f;   break; // ±500°/s
+        case 0x10: lsb_per_dps = 32.8f;   break; // ±1000°/s
+        case 0x18: lsb_per_dps = 16.4f;   break; // ±2000°/s
+        default:   lsb_per_dps = 32.8f;   break;
+    }
+
+    gyro_dps[0] = (float)raw_data[3] / lsb_per_dps;
+    gyro_dps[1] = (float)raw_data[4] / lsb_per_dps;
+    gyro_dps[2] = (float)raw_data[5] / lsb_per_dps;
+}
+
 void MPU6050_Calibrate(void)
 {
 	switch (cfg.accel_fs_sel)
@@ -192,7 +259,7 @@ void MPU6050_Calibrate(void)
 			break;
 		case 0x08:
 			accel_offset[0] = -226;
-			accel_offset[1] = 111;
+			accel_offset[1] = -6;
 			accel_offset[2] = -702;
 			break;
 		case 0x10:
@@ -214,9 +281,9 @@ void MPU6050_Calibrate(void)
 			gyro_offset[2] = 28;
 			break;
 		case 0x08:
-			gyro_offset[0] = -221;
-			gyro_offset[1] = 101;
-			gyro_offset[2] = -99;
+			gyro_offset[0] = -213;
+			gyro_offset[1] = 51;
+			gyro_offset[2] = 25;
 			break;
 		case 0x10:
 			gyro_offset[0] = -55;

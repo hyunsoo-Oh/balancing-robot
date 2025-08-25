@@ -113,9 +113,14 @@ void MPU6050_READ_RawAccel(int16_t ac_data[3]);
 void MPU6050_READ_RawGyro(int16_t gy_data[3]);
 void MPU6050_READ_RawTemp(int16_t *te_data);
 
+HAL_StatusTypeDef MPU6050_Read_DMA(uint8_t reg, uint8_t *data, uint8_t length);
+void MPU6050_READ_RawData_DMA(int16_t data[6]);
+
 // 오프셋 보정된 데이터 읽기 함수
 void MPU6050_ReadAccel(int16_t ac_data[3]);    // 오프셋 보정된 가속도
 void MPU6050_ReadGyro(int16_t gy_data[3]);     // 오프셋 보정된 자이로
+
+void MPU6050_ReadData_DMA(int16_t data[6]);
 
 // 오차 제거
 void MPU6050_Calibrate(void);
@@ -124,6 +129,8 @@ void MPU6050_OffsetMeasure(void);
 // 실제 물리 단위로 변환하는 함수
 void  MPU6050_GetAccelG(float accel_g[3]);     // 가속도를 g 단위로
 void  MPU6050_GetGyroDPS(float gyro_dps[3]);   // 자이로를 °/s 단위로
-float MPU6050_GetTempCelsius(void);   // 온도를 섭씨로
+float MPU6050_GetTempCelsius(void);   		   // 온도를 섭씨로
+
+void MPU6050_GetAccGyrData_DMA(float accel_g[3], float gyro_dps[3]);
 
 #endif /* DEVICE_MPU6050_H_ */

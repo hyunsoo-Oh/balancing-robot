@@ -10,7 +10,7 @@
 #include <math.h>
 
 // 샘플링 시간 (ENCODER_Update 주기와 동일)
-#define PID_TS          0.002f   // 2ms
+#define PID_TS          0.003f   // 3ms
 
 // PID 초기화 함수
 void PID_Init(pid_t *pid, float kp, float ki, float kd, float isum_limit, float output_limit)

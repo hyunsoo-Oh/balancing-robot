@@ -51,7 +51,7 @@ static int32_t        s_prevCnt [MOTOR_COUNT] = {0};
 
 // ===== 파라미터 =====
 static const float CPR = PPR * 4.0f * GEAR_RATIO;
-static const float Ts  = 0.002f;  	// 2ms
+static const float Ts  = 0.002f;  	// 3ms
 
 // ===== 속도 PID 상태 =====
 static pid_t pid_speed[MOTOR_COUNT];   // 모터별 속도 PID

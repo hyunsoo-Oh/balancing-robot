@@ -13,4 +13,6 @@
 void apInit(void);
 void apMain(void);
 
+void Process_UART_Command(char* cmd);
+
 #endif /* AP_H_ */

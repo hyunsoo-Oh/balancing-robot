@@ -24,49 +24,45 @@
 
 // ===== PID 파라미터(시작점) =====
 // 각도(inner): 출력=듀티
-#define ANG_KP    	2.05f
-#define ANG_KI    	0.0f
-#define ANG_KD    	0.2f
-#define ANG_ISUM  	0.0f
-#define ANG_OUT   	0.83f   // 듀티 제한
+#define ANG_KP    	0.543f	// 0.54f
+#define ANG_KI    	0.00f
+#define ANG_KD    	0.03f
+#define ANG_ISUM  	0.00f
+#define ANG_OUT   	0.53f   // 듀티 제한
 
 // 속도(outer): 출력=목표 pitch(deg 등가)
 #define SPD_KP   	0.05f
-#define SPD_KI   	0.30f
+#define SPD_KI   	0.20f
 #define SPD_KD   	0.00f
-#define SPD_ISUM 	1.0f
-#define SPD_OUT  	8.0f
+#define SPD_ISUM 	0.3f
+#define SPD_OUT  	1.0f
 
 // ===== 각도 오차 제거 =====
 #define ROLL_ACC_OFFSET			-1.54
-#define PITCH_ACC_OFFSET		3.92
+#define PITCH_ACC_OFFSET		3.22
 #define YAW_ACC_OFFSET			3
 
 // ===== 제어 상태 =====
 static float pitch_deg = 0.0f;
 static float pitch_rad = 0.0f;
 
-// ===== 내부 상태 =====
-static bool        s_enabled = false;
-static float       s_target_speed = 0.0f;    // m/s
-static float       s_pitch_deg = 0.0f;       // 상보필터 추정(deg)
+static bool  s_enabled = false;
+static float s_target_speed = 0.0f;
+static float s_pitch_deg = 0.0f;
 
 // PID 인스턴스(네 PID 타입/API)
 static pid_t s_pid_angle;   // 각도 루프: (meas=deg, set=0deg) → duty
 static pid_t s_pid_speed;   // 속도 루프: (meas=m/s, set=target) → pitch_cmd(deg)
 
-static const float Ts  = 0.002f;  	// 2ms
+static const float Ts  = 0.002f;  	// 3ms
 
 // 상보 필터 파라미터
 static const float fc = 1.0f;          // 컷오프 주파수 [Hz] (0.5~2.0Hz에서 튜닝)
 static const float tau   = 1.0f / (2.0f * (float)M_PI * fc);
 static const float alpha = tau / (tau + Ts);
 
-static float clamp_float(float value, float min_val, float max_val)
-{
-    if (value > max_val) return max_val;
-    if (value < min_val) return min_val;
-    return value;
+static inline float clampf(float x, float lo, float hi){
+    return (x < lo) ? lo : (x > hi) ? hi : x;
 }
 
 static float deadband_filter(float input, float threshold)
@@ -133,25 +129,27 @@ float BALANCE_UpdatePitch(float ax, float ay, float az, float gy)
 }
 
 // --------------- 밸런스 관련 함수 ---------------
-
-void Balance_Init(void)
+/*
+ *  pid_t : Kp, Ki, Kd, setpoint, prev_error, out, isum
+ */
+void BALANCE_Init(void)
 {
   s_enabled = false;
   s_target_speed = 0.0f;
   s_pitch_deg = 0.0f;
 
-  // ★ pidSetting(...) 대신
+  // PID 세팅
   PID_Init(&s_pid_angle, ANG_KP, ANG_KI, ANG_KD, ANG_ISUM, ANG_OUT);
   PID_Init(&s_pid_speed, SPD_KP, SPD_KI, SPD_KD, SPD_ISUM, SPD_OUT);
 
-  // 필요 시 초깃값 리셋
+  // 초깃값
   s_pid_angle.integral = 0.0f;
   s_pid_speed.integral = 0.0f;
   s_pid_angle.prev_error = 0.0f;
   s_pid_speed.prev_error = 0.0f;
 }
 
-void Balance_Enable(bool enable)
+void BALANCE_Enable(bool enable)
 {
   if (!enable) {
     MOTOR_SetDuty_ID(MOTOR_LEFT , 0.0f);
@@ -166,82 +164,62 @@ void Balance_Enable(bool enable)
   s_enabled = enable;
 }
 
-bool Balance_IsEnabled(void){ return s_enabled; }
+bool BALANCE_IsEnabled(void){ return s_enabled; }
 
-void Balance_SetTargetSpeed(float speed_ms)
+void BALANCE_SetTargetSpeed(float speed_ms)
 {
   // 테스트 안전 범위: 약 ±1 m/s
-  s_target_speed = clamp_float(speed_ms, -1.0f, 1.0f);
+  s_target_speed = clampf(speed_ms, -1.0f, 1.0f);
 }
 
-float Balance_GetCurrentAngle(void)
+float BALANCE_GetCurrentAngle(void)
 {
   return s_pitch_deg;
 }
 
 // 5ms 주기 호출(ENCODER_Update와 동일 ISR)
-void Balance_Update(void)
+void BALANCE_Update(void)
 {
-  if (!s_enabled) return;
+	if (!s_enabled) return;
 
-  float acc_g[3], gy_dps[3];
-  MPU6050_GetAccelG(acc_g);
-  MPU6050_GetGyroDPS(gy_dps);
+	float acc_g[3], gy_dps[3];
+//	MPU6050_GetAccelG(acc_g);
+//	MPU6050_GetGyroDPS(gy_dps);
+	MPU6050_GetAccGyrData_DMA(acc_g, gy_dps);
 
-  float gy_pitch  = GY_PITCH_SIGN * gy_dps[GY_PITCH_IDX];
+	// IMU 센서 방향 소프트웨어로 제어
+	float gy_pitch  = GY_PITCH_SIGN * gy_dps[GY_PITCH_IDX];
 
-  // ★ 상보필터로 pitch(deg) 추정 (이미 있는 함수 사용)
-  s_pitch_deg = BALANCE_Angle_GetPitchCF(acc_g[0], acc_g[1], acc_g[2], gy_pitch);
+	// 상보필터로 pitch(deg) 추정
+	s_pitch_deg = BALANCE_Angle_GetPitchCF(acc_g[0], acc_g[1], acc_g[2], gy_pitch);
 
-  if (fabsf(s_pitch_deg) > MAX_TILT_ANGLE) {
-    Balance_Enable(false);
-    return;
-  }
+	if (fabsf(s_pitch_deg) > MAX_TILT_ANGLE)
+	{
+		BALANCE_Enable(false);
+		return;
+	}
 
-  // 속도 → m/s
-  float rpmL = ENCODER_GetRPM_ID(MOTOR_LEFT );
-  float rpmR = ENCODER_GetRPM_ID(MOTOR_RIGHT);
-  float rpmAvg = 0.5f * (rpmL + rpmR);
+	// 속도 → m/s
+	float rpmL = ENCODER_GetRPM_ID(MOTOR_LEFT );
+	float rpmR = ENCODER_GetRPM_ID(MOTOR_RIGHT);
+	float rpmAvg = 0.5f * (rpmL + rpmR);
 
-  const float wheel_r = 0.034f;
-  const float wheel_c = 2.0f * (float)M_PI * wheel_r;
-  float speed_ms = (rpmAvg / 60.0f) * wheel_c;
+	const float wheel_r = 0.034f;
+	const float wheel_c = 2.0f * (float)M_PI * wheel_r;
+	float speed_ms = (rpmAvg / 60.0f) * wheel_c;
 
-  // outer(speed) PID: setpoint = s_target_speed
-  s_pid_speed.setpoint = s_target_speed;
-  float pitch_cmd_deg = PID_Compute(&s_pid_speed, speed_ms);  // deg 등가
+	// outer(speed) PID: setpoint = s_target_speed
+	s_pid_speed.setpoint = s_target_speed;	// 목표 속도 설정 (m/s)
+	float pitch_cmd_deg = PID_Compute(&s_pid_speed, speed_ms);  // 실제 속도와 비교
 
-  // inner(angle) PID: setpoint = pitch_cmd_deg
-  float angle_meas_deg = deadband_filter(s_pitch_deg, DEADBAND_ANGLE);
-  s_pid_angle.setpoint = pitch_cmd_deg;
+	// inner(angle) PID: setpoint = pitch_cmd_deg
+	float angle_meas_deg = deadband_filter(s_pitch_deg, DEADBAND_ANGLE);
+	s_pid_angle.setpoint = pitch_cmd_deg;	// 위에서 계산된 목표 각도
 
-  float duty = PID_Compute(&s_pid_angle, angle_meas_deg);
-  duty = clamp_float(duty, -ANG_OUT, +ANG_OUT);
+	float duty = PID_Compute(&s_pid_angle, angle_meas_deg);
 
-  MOTOR_SetDuty_ID(MOTOR_LEFT , duty);
-  MOTOR_SetDuty_ID(MOTOR_RIGHT, duty);
-}
+	duty = clampf(duty, -ANG_OUT, +ANG_OUT);
 
-// ---- 런타임 튠 ----
-// 현재 제한값을 보존하려면 out/isum을 읽어 재초기화
-static void reinit_angle_pid_(float kp, float ki, float kd)
-{
-  float isum = s_pid_angle.isum_max;     // (양/음 대칭이므로 +만 쓰면 충분)
-  float out  = s_pid_angle.out_max;
-  PID_Init(&s_pid_angle, kp, ki, kd, isum, out);
-}
-static void reinit_speed_pid_(float kp, float ki, float kd)
-{
-  float isum = s_pid_speed.isum_max;
-  float out  = s_pid_speed.out_max;
-  PID_Init(&s_pid_speed, kp, ki, kd, isum, out);
-}
-
-void Balance_SetAnglePID(float kp, float ki, float kd)
-{
-  reinit_angle_pid_(kp, ki, kd);
-}
-void Balance_SetSpeedPID(float kp, float ki, float kd)
-{
-  reinit_speed_pid_(kp, ki, kd);
+	MOTOR_SetDuty_ID(MOTOR_LEFT , duty);
+	MOTOR_SetDuty_ID(MOTOR_RIGHT, duty);
 }

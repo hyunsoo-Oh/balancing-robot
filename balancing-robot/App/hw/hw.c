@@ -14,13 +14,17 @@
 
 volatile uint32_t isr_tick = 0;
 
+float acc_g[3], gy_dps[3];
+
 float roll_deg, pitch_deg;
 float pitch_acc, pitch_gyr, pitch_cf;
 float pitch;
 
+static char msg[128];
+
 void hwInit(void)
 {
-	HAL_TIM_Base_Start_IT(&htim10);
+
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -40,7 +44,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 //        pitch = BALANCE_UpdatePitch(accel[0], accel[0], accel[0], gyro[0]);
 
         ENCODER_Update();
-		Balance_Update();
-
+        BALANCE_Update();
     }
+}
+
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+	if (hi2c->Instance == I2C1)	return;
 }

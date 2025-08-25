@@ -17,15 +17,15 @@ float BALANCE_Angle_GetPitchCF(float ax, float ay, float az, float gy);
 
 float BALANCE_UpdatePitch(float ax, float ay, float az, float gy);
 
-void  Balance_Init(void);
-void  Balance_Enable(bool enable);
-bool  Balance_IsEnabled(void);
+void  BALANCE_Init(void);
+void  BALANCE_Enable(bool enable);
+bool  BALANCE_IsEnabled(void);
 
-void  Balance_SetTargetSpeed(float speed_ms);     // m/s
-float Balance_GetCurrentAngle(void);              // deg
+void  BALANCE_SetTargetSpeed(float speed_ms);     // m/s
+float BALANCE_GetCurrentAngle(void);              // deg
 
 // 5ms 주기(ENCODER_Update와 동일 ISR)에서 호출
-void  Balance_Update(void);
+void  BALANCE_Update(void);
 
 // 런타임 튠
 void  Balance_SetAnglePID(float kp, float ki, float kd);
